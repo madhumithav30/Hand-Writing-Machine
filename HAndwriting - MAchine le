@@ -1,0 +1,324 @@
+  
+#include <Servo.h>
+
+Servo pen;
+
+// Servo on PWM pin 15
+const int penServoPin = 15;
+const int penDelay = 150;  
+ 
+
+const int penDown = 126;
+const int penUp = penDown-20;
+ 
+const int xstepPin = 12;
+const int xdirPin = 11;
+const int ystepPin = 13;
+const int ydirPin = 14;
+
+const int Control = 24;
+const int xlimit = 25;
+const int ylimit = 26;
+
+const float away = 1;
+const float origin = 0;
+
+int xDir, yDir;
+
+ 
+const float StepsPerMillimeterX = 63.2911;
+const float StepsPerMillimeterY = 63.2911;
+
+
+const float Xmin = 0;
+const float Xmax = 105;
+const float Ymin = 0;
+const float Ymax = 105;
+
+ 
+float Xpos = Xmin;
+float Ypos = Ymin;
+
+char line[40];    
+int lineIndex = 0;
+
+char temp[15]; 
+
+void xstepper_rev(int xdir)
+{
+ 
+  digitalWrite(xdirPin, xdir);
+  digitalWrite(xstepPin, HIGH);
+  delayMicroseconds(800);
+  digitalWrite(xstepPin, LOW);
+  delayMicroseconds(800);
+}
+
+void ystepper_rev(int ydir)
+{
+  
+  digitalWrite(ydirPin, ydir);
+  digitalWrite(ystepPin, HIGH);
+  delayMicroseconds(800);
+  digitalWrite(ystepPin, LOW);
+  delayMicroseconds(800);
+
+}
+
+void not_writing()
+{
+  pen.write(penUp);  //pen up
+  delay(penDelay);  
+  Serial.println("pen is not writing");
+}
+
+void writing()
+{
+  pen.write(penDown);   //pen down
+  delay(penDelay);     
+  Serial.println("pen is writing now");
+}
+
+void setup()
+{
+  //declare all outputs
+  pinMode(xstepPin, OUTPUT);
+  pinMode(xdirPin, OUTPUT);
+
+  pinMode(ystepPin, OUTPUT);
+  pinMode(ydirPin, OUTPUT);
+  pinMode(xlimit, INPUT);
+  pinMode(ylimit, INPUT);
+  pinMode(Control, INPUT_PULLUP);
+  pen.attach(penServoPin);
+  pen.write(penUp);
+  delay(penDelay);
+  Serial.begin( 9600 );
+  Serial.println("Mini CNC Plotteris active!");
+  Serial.print("X range is from ");
+  Serial.print(Xmin);
+  Serial.print(" to ");
+  Serial.print(Xmax);
+  Serial.println(" mm.");
+  Serial.print("Y range is from ");
+  Serial.print(Ymin);
+  Serial.print(" to ");
+  Serial.print(Ymax);
+  Serial.println(" mm.");
+}
+
+void loop()
+{
+  
+  if (digitalRead(Control) == LOW)
+  {
+    pen.write(penDown);
+    int c = digitalRead(xlimit);
+    int d = digitalRead(ylimit);
+    if ((c == 0) && (d == 0))
+    {
+      xstepper_rev(origin);
+    }
+    else if ((c == 0) && (d == 1))
+    {
+      xstepper_rev(away);
+    }
+    else if ((c == 1) && (d == 0))
+    {
+      ystepper_rev(origin);
+    }
+    else if ((c == 1) && (d == 1))
+    {
+      ystepper_rev(away);
+    }
+  }
+
+ 
+  else if (digitalRead(Control) == HIGH)
+  {
+    
+    while ( Serial.available() > 0 ) //if data is received from the g code sender
+    {
+      char e = Serial.read();    
+      line[lineIndex] = e;  
+      lineIndex = lineIndex + 1;
+      if ((e == '\n') || (e == '\r'))
+      {
+        line[lineIndex] = '\0';  
+        Serial.print("Received :");
+        Serial.println(line);
+        Serial.print("lineIndex =");
+        Serial.println(lineIndex);
+        if ((line[0] == 'G') || (line[0] == 'M'))
+        {
+          //process the g code
+          gcode_processing(line);
+
+          delay(penDelay);
+          memset(line, 0, sizeof(line));
+          lineIndex = 0;
+          Serial.println("ok");
+        }
+      }
+    }
+  }
+}
+void gcode_processing(char* line)
+{
+  int currentIndex = 0;
+  if (line[currentIndex] == 'G')  // if it is a G code
+  {
+    temp[0] = line[currentIndex + 1];
+    temp[1] = line[currentIndex + 2];
+    temp[2] = '\0';
+    delay(10);
+    Serial.print("G Command: ");
+    Serial.println(temp);
+    int code = atoi(temp);
+    Serial.print("code =");
+    Serial.println(code);
+    if ((code == 1) || (code == 2) || (code == 3))
+    {
+      char* xIndex = strchr(line, 'X');
+      char* yIndex = strchr(line, 'Y');
+      char* FIndex = strchr(line, 'F');
+      delay(10);
+      float newXpos = atof(xIndex + 1);
+      float newYpos = atof(yIndex + 1);
+      float Fvalue = atof(FIndex + 1);
+
+      Serial.print("Fvalue =");
+      Serial.println(Fvalue);
+      Serial.print("xIndex =");
+      Serial.println(xIndex);
+      Serial.print("yIndex =");
+      Serial.println(yIndex);
+      Serial.print("newXpos, newYpos =");
+      Serial.print("(");
+      Serial.print(newXpos);
+      Serial.print(",");
+      Serial.print(newYpos);
+      Serial.println(")");
+      delay(10);
+      //if there is no F value,Draw
+      if (Fvalue == 0)
+      {
+        draw(newXpos, newYpos);
+      }
+    }
+    //else ingore the G code
+    else
+    {
+      //ignore other gcodes
+    }
+  }
+  // if it is a M code
+  else if (line[currentIndex] == 'M')
+  {
+    
+    temp[0] = line[currentIndex + 1];
+    temp[1] = line[currentIndex + 2];
+    temp[2] = '\0';
+    delay(10);
+    Serial.print("M Command: ");
+    Serial.println(temp);
+    int code = atoi(temp);
+    Serial.print("code =");
+    Serial.println(code);
+     if (code == 03)
+    {
+      writing();
+    }
+    else
+    {
+      not_writing();
+    }
+  }
+}
+void draw(float x, float y)
+{
+
+  Serial.println("entered draw");
+  x = float(x * StepsPerMillimeterX);
+  y = float(y * StepsPerMillimeterY);
+  delay(10);
+   float x0 = Xpos;
+  float y0 = Ypos;
+  float ChangeInX = 0;
+  float ChangeInY = 0;
+  delay(10);
+  if (x > x0)
+  {
+    Serial.println("x>x0");
+    xDir = away;
+    Serial.print("X direction =");
+    Serial.println(xDir);
+    ChangeInX = x - x0;
+  }
+  else 
+  {
+    Serial.println("x0>x");
+    xDir = origin;
+    ChangeInX = x0 - x;
+    Serial.print("X direction =");
+    Serial.println(xDir);
+  }
+  delay(20);
+  if (y > y0)
+  {
+    Serial.println("y>y0");
+    yDir = away;
+    ChangeInY = y - y0;
+    Serial.print("Y direction =");
+    Serial.println(yDir);
+  }
+
+  else
+  {
+    Serial.println("y0>y");
+
+    yDir = origin;
+    ChangeInY = y0 - y;
+    Serial.print("Y direction =");
+    Serial.println(yDir);
+  }
+  delay(20);
+  Serial.print("Change in X =");
+  Serial.println(ChangeInX);
+  Serial.print("Change in Y =");
+  Serial.println(ChangeInY);
+  float i;
+  int over = 0;
+  if (ChangeInX > ChangeInY)
+  {
+    for (i = 0; i < ChangeInX; i++)
+    {
+      xstepper_rev(xDir);
+      over += ChangeInY;
+      if (over >= ChangeInX)
+      {
+        over -= ChangeInX;
+        ystepper_rev(yDir);
+      }
+      delay(10);
+    }
+  }
+  else if (ChangeInY >= ChangeInX)
+  {
+    for (i = 0; i < ChangeInY; i++)
+    {
+      ystepper_rev(yDir);
+      over += ChangeInX;
+      if (over >= ChangeInY)
+      {
+        over -= ChangeInY;
+        xstepper_rev(xDir);
+      }
+      delay(10);
+    }
+  }
+  Serial.println("Finished Drawing");
+  delay(150); //line delay
+  Xpos=x;
+  Ypos = y;
+}
